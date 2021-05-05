@@ -36,17 +36,17 @@ interface RequestExtended extends Request {
 class ExpressAuthorizer {
   authentication_agent: AuthenticationAgent
   use_authorization: boolean
-  #token_verification?: TokenVerification
+  token_verification?: TokenVerification
   token_secret?: Secret
-  #identity_context_header_key?: string
-  #identity_context_transformation_function?: Function
-  #user_claims_root_key: string
-  #user_id_key: string
-  #user_roles_key: string
-  #organization_group_key: string
-  #organization_id_key: string
-  #route_policies: ParsedRoutePolicy[]
-  #decoded_token: any
+  identity_context_header_key?: string
+  identity_context_transformation_function?: Function
+  user_claims_root_key: string
+  user_id_key: string
+  user_roles_key: string
+  organization_group_key: string
+  organization_id_key: string
+  route_policies: ParsedRoutePolicy[]
+  decoded_token: any
 
   constructor (authentication_agent: AuthenticationAgent, use_authorization: boolean = true) {
     if (!authentication$ENUM.includes(authentication_agent)) {
@@ -58,12 +58,12 @@ class ExpressAuthorizer {
     }
     this.authentication_agent = authentication_agent
     this.use_authorization = use_authorization
-    this.#user_claims_root_key = ''
-    this.#user_id_key = ''
-    this.#user_roles_key = ''
-    this.#organization_group_key = ''
-    this.#organization_id_key = ''
-    this.#route_policies = []
+    this.user_claims_root_key = ''
+    this.user_id_key = ''
+    this.user_roles_key = ''
+    this.organization_group_key = ''
+    this.organization_id_key = ''
+    this.route_policies = []
   }
 
   private async initialize_remote_secret (uri: string, refresh_interval?: number) {
@@ -96,7 +96,7 @@ class ExpressAuthorizer {
 
   private authenticate_PLAIN_TEXT(token: string, secret: any, res: Response) {
     try {
-      this.#decoded_token = jwt.verify(token, secret)
+      this.decoded_token = jwt.verify(token, secret)
     } catch (err) {
       return res.sendStatus(401)
     }
@@ -106,7 +106,7 @@ class ExpressAuthorizer {
     const decodedFull = jwt.decode(token, { complete: true })
     const kid = decodedFull?.header?.kid
     try {
-      this.#decoded_token = jwt.verify(
+      this.decoded_token = jwt.verify(
         token,
         this.build_certificate(kid && typeof secret !== 'string'? secret[kid] : secret),
       )
@@ -125,7 +125,7 @@ class ExpressAuthorizer {
         : { keys: Array.isArray(secret) ? secret : [secret] })
       const rawKey = keystore.get(kid)
       const key = await jose.JWK.asKey(rawKey)
-      this.#decoded_token = jwt.verify(token, key.toPEM(false))
+      this.decoded_token = jwt.verify(token, key.toPEM(false))
     } catch (err) {
       console.info(err)
       return res.sendStatus(401)
@@ -137,7 +137,7 @@ class ExpressAuthorizer {
     secret,
     secret_refresh_interval,
   }: AuthenticationParams) {
-    this.#token_verification = method
+    this.token_verification = method
     const token_secret_uri = typeof secret === 'string' && testurl({ exact: true }).test(secret)
       ? secret
       : false
@@ -203,13 +203,13 @@ class ExpressAuthorizer {
         'when "identity_context_transformation_function" is defined',
       )
     }
-    this.#identity_context_header_key = identity_context_header_key
-    this.#identity_context_transformation_function = identity_context_transformation_function
-    this.#user_claims_root_key = user_claims_root_key
-    this.#user_id_key = user_id_key
-    this.#user_roles_key = user_roles_key
-    this.#organization_group_key = organization_group_key
-    this.#organization_id_key = organization_id_key
+    this.identity_context_header_key = identity_context_header_key
+    this.identity_context_transformation_function = identity_context_transformation_function
+    this.user_claims_root_key = user_claims_root_key
+    this.user_id_key = user_id_key
+    this.user_roles_key = user_roles_key
+    this.organization_group_key = organization_group_key
+    this.organization_id_key = organization_id_key
   }
 
   add_route_policy(policy: RoutePolicy) {
@@ -226,8 +226,8 @@ class ExpressAuthorizer {
         : cur.roles.map((role: any) => `${cur.organization_group}:${role}`),
     ]), [])
     roles = [...new Set(roles)]
-    this.#route_policies = [
-      ...this.#route_policies,
+    this.route_policies = [
+      ...this.route_policies,
       ...operations.reduce((acc, oprt): any => ([
         ...acc,
         ...roles.map((role): object => ({
@@ -246,9 +246,9 @@ class ExpressAuthorizer {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '') || ''
       const secret = this.token_secret || ''
-      const secretJWK = this.#token_verification === tokenverify$JWK
-      const secretPEM = this.#token_verification === tokenverify$PEM
-      const secretPLAIN_TEXT = this.#token_verification === tokenverify$PLAIN_TEXT
+      const secretJWK = this.token_verification === tokenverify$JWK
+      const secretPEM = this.token_verification === tokenverify$PEM
+      const secretPLAIN_TEXT = this.token_verification === tokenverify$PLAIN_TEXT
       const authSERVER = this.authentication_agent === authentication$SERVER
       if (authSERVER && secretJWK) await this.authenticate_JWK(token, secret, res)
       if (authSERVER && secretPEM) await this.authenticate_PEM(token, secret, res)
@@ -275,11 +275,11 @@ class ExpressAuthorizer {
 
   authorize(req: RequestExtended, res: Response, next: NextFunction) {
     try {
-      const identityContextKey = this.#identity_context_header_key
+      const identityContextKey = this.identity_context_header_key
       const rawContext = identityContextKey ? req.headers[identityContextKey] : undefined
-      const parseContext = this.#identity_context_transformation_function
+      const parseContext = this.identity_context_transformation_function
       const decodedToken = this.authentication_agent === authentication$SERVER
-        ? this.#decoded_token
+        ? this.decoded_token
         : !rawContext
         ? jwt.decode((req.headers.authorization || '').replace('Bearer ', ''))
         : parseContext
@@ -288,21 +288,21 @@ class ExpressAuthorizer {
       if (!decodedToken) return res.sendStatus(403)
       req.context = decodedToken
 
-      const userId = decodedToken[this.#user_id_key]
-      const customClaims = decodedToken[this.#user_claims_root_key]
+      const userId = decodedToken[this.user_id_key]
+      const customClaims = decodedToken[this.user_claims_root_key]
       const roles = customClaims.reduce((acc: string[], claim: any) => ([
         ...acc,
         ...[
-          ...claim[this.#user_roles_key].map((role: string) => `${claim[this.#organization_group_key]}:${role}:${claim[this.#organization_id_key]}`),
-          ...claim[this.#user_roles_key].map((role: string) => `${claim[this.#organization_group_key]}:${role}:*`),
-          `${claim[this.#organization_group_key]}:*:${claim[this.#organization_id_key]}`,
-          `${claim[this.#organization_group_key]}:*:*`,
+          ...claim[this.user_roles_key].map((role: string) => `${claim[this.organization_group_key]}:${role}:${claim[this.organization_id_key]}`),
+          ...claim[this.user_roles_key].map((role: string) => `${claim[this.organization_group_key]}:${role}:*`),
+          `${claim[this.organization_group_key]}:*:${claim[this.organization_id_key]}`,
+          `${claim[this.organization_group_key]}:*:*`,
         ],
       ]), [])
 
-      const reqOrganizationId = this.extractReqValue(req, this.#organization_id_key, '*')
-      const reqUserId = this.extractReqValue(req, this.#user_id_key, undefined)
-      const policies = this.#route_policies
+      const reqOrganizationId = this.extractReqValue(req, this.organization_id_key, '*')
+      const reqUserId = this.extractReqValue(req, this.user_id_key, undefined)
+      const policies = this.route_policies
         .filter(policy => policy.operation === `${req.method.toUpperCase()} ${req.path}`)
 
       const isOpenToAnyone = !policies.length || policies.find(policy => policy.role === '*')
