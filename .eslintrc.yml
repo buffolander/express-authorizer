@@ -1,0 +1,36 @@
+env:
+  commonjs: true
+  es6: true
+  node: true
+globals:
+  Atomics: readonly
+  SharedArrayBuffer: readonly
+extends:
+  - 'airbnb'
+  - 'plugin:@typescript-eslint/recommended'
+parserOptions:
+  ecmaVersion: 2018
+parser: '@typescript-eslint/parser'
+plugins:
+  - '@typescript-eslint'
+  - 'prettier'
+settings:
+  'import/parsers':
+    '@typescript-eslint/parser':
+      - '.ts'
+      - '.tsx'
+  'import/resolver':
+    typescript: {}
+rules:
+  semi:
+    - error
+    - never
+  no-console:
+    - error
+    - allow:
+        - info
+        - warn
+        - error
+  use-isnan:
+    - allow
+  consistent-return: 0

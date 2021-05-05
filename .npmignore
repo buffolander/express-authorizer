@@ -1,0 +1,7 @@
+# Dependency directories
+node_modules/
+# Source code
+src/
+tests/
+# Optional eslint cache
+.eslintcache

@@ -1,0 +1,59 @@
+{
+  "name": "@brdu/express-authorizer",
+  "description": "Express middleware handles JWT authentication and role-based authorization",
+  "version": "0.5.0",
+  "author": "buffolander <bruno@brdu.net>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buffolander/brdu-express-authorizer.git"
+  },
+  "keywords": [
+    "express",
+    "middleware",
+    "auhtorization",
+    "authentication",
+    "JWT",
+    "JWK",
+    "PEM",
+    "rotating keys"
+  ],
+  "dependencies": {
+    "axios": "^0.21.1",
+    "jsonwebtoken": "^8.5.1",
+    "jwks-rsa": "^2.0.3",
+    "node-jose": "^2.0.0",
+    "runtypes": "^6.3.0",
+    "url-regex": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.11",
+    "@types/jsonwebtoken": "^8.5.1",
+    "@types/node-jose": "^1.1.5",
+    "@typescript-eslint/eslint-plugin": "^4.22.0",
+    "@typescript-eslint/parser": "^4.22.0",
+    "eslint": "^7.25.0",
+    "eslint-config-airbnb": "^18.2.1",
+    "eslint-config-airbnb-base": "^14.2.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-import-resolver-typescript": "^2.4.0",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-json": "^2.1.2",
+    "eslint-plugin-jsx-a11y": "^6.4.1",
+    "eslint-plugin-prettier": "^3.4.0",
+    "jest": "^26.4.2",
+    "prettier": "^2.2.1",
+    "typescript": "^4.2.4"
+  },
+  "main": "src/index.js",
+  "files": [
+    "index.js",
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "test": "jest"
+  }
+}
