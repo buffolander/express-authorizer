@@ -273,7 +273,7 @@ class ExpressAuthorizer {
       : alt
   }
 
-  authorize(req: RequestExtended, res: Response, next: NextFunction) {
+  authorize = (req: RequestExtended, res: Response, next: NextFunction) => {
     console.info(this)
     try {
       const identityContextKey = this.identity_context_header_key
