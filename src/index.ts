@@ -274,7 +274,6 @@ class ExpressAuthorizer {
   }
 
   authorize = (req: RequestExtended, res: Response, next: NextFunction) => {
-    console.info(this)
     try {
       const identityContextKey = this.identity_context_header_key
       const rawContext = identityContextKey ? req.headers[identityContextKey] : undefined
@@ -288,9 +287,12 @@ class ExpressAuthorizer {
         : rawContext
       if (!decodedToken) return res.sendStatus(403)
       req.context = decodedToken
-
+      console.info(JSON.stringify(decodedToken))
+      console.info(this.user_id_key)
+      console.info(this.user_claims_root_key)
       const userId = decodedToken[this.user_id_key]
       const customClaims = decodedToken[this.user_claims_root_key]
+      console.info(JSON.stringify(customClaims))
       const roles = customClaims.reduce((acc: string[], claim: any) => ([
         ...acc,
         ...[
