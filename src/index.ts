@@ -29,6 +29,10 @@ import {
   tokenverify$PEM, tokenverify$JWK, tokenverify$PLAIN_TEXT, tokenverify$ENUM,
 } from './constants'
 
+interface RequestExtended extends Request {
+  context?: any
+}
+
 class ExpressAuthorizer {
   authentication_agent: AuthenticationAgent
   use_authorization: boolean
@@ -269,7 +273,7 @@ class ExpressAuthorizer {
       : alt
   }
 
-  authorize(req: Request, res: Response, next: NextFunction) {
+  authorize(req: RequestExtended, res: Response, next: NextFunction) {
     try {
       const identityContextKey = this.#identity_context_header_key
       const rawContext = identityContextKey ? req.headers[identityContextKey] : undefined
@@ -282,6 +286,8 @@ class ExpressAuthorizer {
         ? parseContext(rawContext)
         : rawContext
       if (!decodedToken) return res.sendStatus(403)
+      req.context = decodedToken
+
       const userId = decodedToken[this.#user_id_key]
       const customClaims = decodedToken[this.#user_claims_root_key]
       const roles = customClaims.reduce((acc: string[], claim: any) => ([
