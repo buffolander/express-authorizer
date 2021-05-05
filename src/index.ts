@@ -274,6 +274,7 @@ class ExpressAuthorizer {
   }
 
   authorize(req: RequestExtended, res: Response, next: NextFunction) {
+    console.info(this)
     try {
       const identityContextKey = this.identity_context_header_key
       const rawContext = identityContextKey ? req.headers[identityContextKey] : undefined
