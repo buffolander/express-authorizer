@@ -1,7 +1,7 @@
 {
   "name": "@brdu/express-authorizer",
   "description": "Express middleware handles JWT authentication and role-based authorization",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "author": "buffolander <bruno@brdu.net>",
   "license": "MIT",
   "repository": {
