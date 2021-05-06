@@ -4,8 +4,9 @@ import * as jwt from 'jsonwebtoken'
 import * as jose from 'node-jose'
 
 import {
-  exceptionHandler,
-} from './utils'
+  match,
+  MatchResult,
+} from 'path-to-regexp'
 
 import {
   Request,
@@ -29,13 +30,16 @@ import {
   tokenverify$PEM, tokenverify$JWK, tokenverify$PLAIN_TEXT, tokenverify$ENUM,
 } from './constants'
 
+import {
+  exceptionHandler,
+} from './utils'
+
 interface RequestExtended extends Request {
   context?: any
 }
 
 class ExpressAuthorizer {
   authentication_agent: AuthenticationAgent
-  use_authorization: boolean
   token_verification?: TokenVerification
   token_secret?: Secret
   identity_context_header_key?: string
@@ -44,11 +48,11 @@ class ExpressAuthorizer {
   user_id_key: string
   user_roles_key: string
   organization_group_key: string
-  organization_id_key: string
+  private organization_id_key: string
   route_policies: ParsedRoutePolicy[]
   decoded_token: any
 
-  constructor (authentication_agent: AuthenticationAgent, use_authorization: boolean = true) {
+  constructor (authentication_agent: AuthenticationAgent) {
     if (!authentication$ENUM.includes(authentication_agent)) {
       exceptionHandler(
         'INVALID_ENUM',
@@ -57,7 +61,6 @@ class ExpressAuthorizer {
       )
     }
     this.authentication_agent = authentication_agent
-    this.use_authorization = use_authorization
     this.user_claims_root_key = ''
     this.user_id_key = ''
     this.user_roles_key = ''
@@ -94,15 +97,38 @@ class ExpressAuthorizer {
     .replace('-----BEGIN-CERTIFICATE-----', '-----BEGIN CERTIFICATE-----')
   }
 
-  private authenticate_PLAIN_TEXT(token: string, secret: any, res: Response) {
+  private extract_value(
+    req: Request,
+    params: any,
+    key: string | undefined,
+    altKey: string | undefined,
+    alt: string | undefined
+  ) {
+    return altKey && params
+      ? params[altKey]
+      : altKey && req.query
+      ? req.query[altKey]
+      : altKey && req.body
+      ? req.body[altKey]
+      : key && params
+      ? params[key]
+      : key && req.query
+      ? req.query[key]
+      : key && req.body
+      ? req.body[key]
+      : alt
+  }
+
+  private authenticate_PLAIN_TEXT(token: string, secret: any) {
     try {
       this.decoded_token = jwt.verify(token, secret)
+      return true
     } catch (err) {
-      return res.sendStatus(401)
+      return false
     }
   }
 
-  private authenticate_PEM(token: string, secret: any, res: Response) {
+  private authenticate_PEM(token: string, secret: any) {
     const decodedFull = jwt.decode(token, { complete: true })
     const kid = decodedFull?.header?.kid
     try {
@@ -110,13 +136,14 @@ class ExpressAuthorizer {
         token,
         this.build_certificate(kid && typeof secret !== 'string'? secret[kid] : secret),
       )
+      return true
     } catch (err) {
       console.info(err)
-      return res.sendStatus(401)
+      return false
     }
   }
 
-  private async authenticate_JWK(token: string, secret: any, res: Response) {
+  private async authenticate_JWK(token: string, secret: any) {
     const decodedFull = jwt.decode(token, { complete: true })
     const kid = decodedFull?.header?.kid
     try {
@@ -126,9 +153,10 @@ class ExpressAuthorizer {
       const rawKey = keystore.get(kid)
       const key = await jose.JWK.asKey(rawKey)
       this.decoded_token = jwt.verify(token, key.toPEM(false))
+      return true
     } catch (err) {
       console.info(err)
-      return res.sendStatus(401)
+      return false
     }
   }
 
@@ -215,34 +243,37 @@ class ExpressAuthorizer {
   add_route_policy(policy: RoutePolicy) {
     const operations = policy.operations.reduce((acc: string[], oprt) => ([
       ...acc,
-      ...oprt.methods.map((mthd: string) => `${mthd} ${oprt.path}`),
+      ...oprt.methods.map((mthd: string) => `/${mthd.toLowerCase()}/${oprt.path}`),
     ]), [])
-    let roles = policy.authorized_roles.reduce((acc: string[], cur: any) => ([
-      ...acc,
-      ...typeof cur === 'string' // condition 1
-        ? [cur]
-        : typeof cur.roles === 'string' // condition 2
-        ? [cur.organization_group === '*' && cur.roles === '*' ? '*' : `${cur.organization_group}:${cur.roles}`]
-        : cur.roles.map((role: any) => `${cur.organization_group}:${role}`),
-    ]), [])
+
+    let roles = typeof policy.authorized_roles === 'string'
+      ? [policy.authorized_roles]
+      : policy.authorized_roles.reduce((acc: string[], cur: any) => ([
+        ...acc,
+        ...typeof cur.roles === 'string'
+          ? [cur.organization_group === '*' && cur.roles === '*' ? '*' : `${cur.organization_group}:${cur.roles}`]
+          : cur.roles.map((role: any) => `${cur.organization_group}:${role}`),
+      ]), [])
     roles = [...new Set(roles)]
+
     this.route_policies = [
       ...this.route_policies,
       ...operations.reduce((acc, oprt): any => ([
         ...acc,
-        ...roles.map((role): object => ({
+        ...roles.map((role): ParsedRoutePolicy => ({
           operation: oprt,
           role,
-          restrict_organization_id: typeof policy.restrict_organization_id === 'undefined'
+          organization_restricted: policy.organization_restricted === undefined
             ? true
-            : policy.restrict_organization_id,
+            : policy.organization_restricted,
           organization_id_alt_key: policy.organization_id_alt_key,
+          user_id_alt_key: policy.user_id_alt_key,
         })),
       ]), []),
     ]
   }
 
-  async authenticate(req: Request, res: Response, next: NextFunction) {
+  authenticate = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '') || ''
       const secret = this.token_secret || ''
@@ -250,10 +281,11 @@ class ExpressAuthorizer {
       const secretPEM = this.token_verification === tokenverify$PEM
       const secretPLAIN_TEXT = this.token_verification === tokenverify$PLAIN_TEXT
       const authSERVER = this.authentication_agent === authentication$SERVER
-      if (authSERVER && secretJWK) await this.authenticate_JWK(token, secret, res)
-      if (authSERVER && secretPEM) await this.authenticate_PEM(token, secret, res)
-      if (authSERVER && secretPLAIN_TEXT) await this.authenticate_PLAIN_TEXT(token, secret, res)
-      if (this.use_authorization) return this.authorize(req, res, next)
+      let answer
+      if (authSERVER && secretJWK) answer = await this.authenticate_JWK(token, secret)
+      if (authSERVER && secretPEM) answer = await this.authenticate_PEM(token, secret)
+      if (authSERVER && secretPLAIN_TEXT) answer = await this.authenticate_PLAIN_TEXT(token, secret)
+      if (!answer) throw 'Unauthorized'
       next()
     } catch (err) {
       console.error(err)
@@ -261,70 +293,79 @@ class ExpressAuthorizer {
     }
   }
 
-  private extractReqValue(req: Request, key: string | undefined, alt: string | undefined) {
-    return !key
-      ? alt
-      : req.params && req.params[key]
-      ? req.params[key]
-      : req.query && req.query[key]
-      ? req.query[key]
-      : req.body && req.body[key]
-      ? req.body[key]
-      : alt
-  }
-
   authorize = (req: RequestExtended, res: Response, next: NextFunction) => {
+    const {
+      method,
+      path,
+      headers,
+    } = req
+    const {
+      route_policies: routepolicies,
+      identity_context_header_key: idcontextkey,
+      identity_context_transformation_function: contextfunction,
+      authentication_agent: authagent,
+      decoded_token: decodedtoken,
+      extract_value: extractfunction,
+      user_claims_root_key: claimskey,
+      user_id_key: useridkey,
+      user_roles_key: roleskey,
+      organization_group_key: orggroupkey,
+      organization_id_key: orgidkey,
+    } = this
     try {
-      const identityContextKey = this.identity_context_header_key
-      const rawContext = identityContextKey ? req.headers[identityContextKey] : undefined
-      const parseContext = this.identity_context_transformation_function
-      const decodedToken = this.authentication_agent === authentication$SERVER
-        ? this.decoded_token
-        : !rawContext
-        ? jwt.decode((req.headers.authorization || '').replace('Bearer ', ''))
-        : parseContext
-        ? parseContext(rawContext)
-        : rawContext
-      if (!decodedToken) return res.sendStatus(403)
-      req.context = decodedToken
-      console.info(JSON.stringify(decodedToken))
-      console.info(this.user_id_key)
-      console.info(this.user_claims_root_key)
-      const userId = decodedToken[this.user_id_key]
-      const customClaims = decodedToken[this.user_claims_root_key]
-      console.info(JSON.stringify(customClaims))
-      const roles = customClaims.reduce((acc: string[], claim: any) => ([
+      const policies = routepolicies.reduce((acc: (ParsedRoutePolicy & MatchResult)[], cur: ParsedRoutePolicy) => {
+        const matcher = match(cur.operation, { decode: decodeURIComponent })
+        const _match = matcher(`/${method.toLowerCase()}/${path}`)
+        return _match ? [...acc, { ...cur, ..._match }] : acc
+      }, [])
+      if (!policies.length) return next()
+
+      const isopen = policies.find(policy => (policy && policy.role === '*'))
+      if (isopen) return next()
+
+      const rawcontext = idcontextkey ? headers[idcontextkey] : undefined
+      const token = authagent === authentication$SERVER
+        ? decodedtoken
+        : !rawcontext
+        ? jwt.decode((headers.authorization || '').replace('Bearer ', ''))
+        : contextfunction
+        ? contextfunction(rawcontext)
+        : rawcontext
+      if (!token) throw 'Forbidden'
+      req.context = token
+
+      const userid = token[useridkey]
+      const selfpolicy = policies.find(policy => policy.role === 'self')
+      const { params: selfparams, user_id_alt_key: useridaltkey } = selfpolicy || {}
+      const useridreq = extractfunction(req, selfparams, useridkey, useridaltkey, undefined)
+      if (selfpolicy && useridreq === 'me') return next()
+      let authorized: any = (selfpolicy && useridreq === userid)
+        || (selfpolicy && Array.isArray(useridreq) && useridreq.includes(userid))
+      if (authorized) return next()
+
+      const rolepolicies = policies.filter(policy => !['*', 'self'].includes(policy.role))
+      if (!rolepolicies.length) throw 'Forbidden'
+
+      const orgidreq = extractfunction(req, undefined, orgidkey, undefined, '*')
+      const authdroles = rolepolicies.map(policy => policy.organization_restricted
+        ? `${policy.role}:${extractfunction(req, policy.params, orgidkey, policy.organization_id_alt_key, undefined) || orgidreq}`
+        : `${policy.role}:*`)
+      const customclaims = token[claimskey]
+      const userroles = customclaims.reduce((acc: string[], claim: any) => ([
         ...acc,
         ...[
-          ...claim[this.user_roles_key].map((role: string) => `${claim[this.organization_group_key]}:${role}:${claim[this.organization_id_key]}`),
-          ...claim[this.user_roles_key].map((role: string) => `${claim[this.organization_group_key]}:${role}:*`),
-          `${claim[this.organization_group_key]}:*:${claim[this.organization_id_key]}`,
-          `${claim[this.organization_group_key]}:*:*`,
+          ...claim[roleskey].map((role: string) => `${claim[orggroupkey]}:${role}:${claim[orgidkey]}`),
+          ...claim[roleskey].map((role: string) => `${claim[orggroupkey]}:${role}:*`),
+          `${claim[orggroupkey]}:*:${claim[orgidkey]}`,
+          `${claim[orggroupkey]}:*:*`,
         ],
       ]), [])
-
-      const reqOrganizationId = this.extractReqValue(req, this.organization_id_key, '*')
-      const reqUserId = this.extractReqValue(req, this.user_id_key, undefined)
-      const policies = this.route_policies
-        .filter(policy => policy.operation === `${req.method.toUpperCase()} ${req.path}`)
-
-      const isOpenToAnyone = !policies.length || policies.find(policy => policy.role === '*')
-      if (isOpenToAnyone) return next()
-
-      const policyIncludesSelf = policies.find(policy => policy.role === 'self')
-      if (policyIncludesSelf && reqUserId === 'me') return next()
-      const authorizedSelf = policyIncludesSelf && reqUserId === userId
-
-      const authorizedRoles = policies.map(policy => policy.restrict_organization_id
-        ? `${policy.role}:${this.extractReqValue(req, policy.organization_id_alt_key, undefined) || reqOrganizationId}`
-        : `${policy.role}:*`)
-      const intersection = authorizedRoles.find(item => roles.includes(item))
-
-      if (!authorizedSelf && !intersection) return res.sendStatus(403)
-      next()
+      authorized = authdroles.find(item => userroles.includes(item))
+      if (authorized) return next()
+      throw 'Forbidden'
     } catch (err) {
       console.error(err)
-      return res.sendStatus(401)
+      return res.sendStatus(403)
     }
   }
 }

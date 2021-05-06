@@ -22,14 +22,16 @@ type AuthorizedRole = {
 
 export type RoutePolicy = {
   operations: Operation[]
-  authorized_roles: ('self' | '*' | AuthorizedRole)[]
-  restrict_organization_id?: boolean
+  authorized_roles: ('self' | '*' | AuthorizedRole[])
+  organization_restricted?: boolean
+  user_id_alt_key?: string
   organization_id_alt_key?: string
 }
 
 export type ParsedRoutePolicy = {
   operation: string
   role: string
-  restrict_organization_id: boolean
+  organization_restricted: boolean
+  user_id_alt_key?: string
   organization_id_alt_key?: string
 }
