@@ -314,7 +314,9 @@ class ExpressAuthorizer {
       extract_value: extractfunction,
     } = this
     try {
-      const rawcontext = contextkey ? headers[contextkey] : undefined
+      const rawcontext = contextkey
+        ? headers[contextkey.toLowerCase()]
+        : undefined
       const context = authagent === authentication$SERVER
         ? tokenres
         : !rawcontext
@@ -338,7 +340,6 @@ class ExpressAuthorizer {
       const userid = context[keyuserid]
       const selfpolicy = policies.find(policy => policy.role === 'self')
       const { params: selfparams, user_id_alt_key: useridaltkey } = selfpolicy || {}
-      const testparams = selfparams as any
       const useridreq = extractfunction(req, selfparams, keyuserid, useridaltkey, undefined)
       if (selfpolicy && useridreq === 'me') return next()
       let authorized: any = (selfpolicy && useridreq === userid)
