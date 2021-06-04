@@ -324,7 +324,7 @@ class ExpressAuthorizer {
         : contextfunction
         ? contextfunction(rawcontext)
         : rawcontext
-      if (!context) throw 'Forbidden'
+      if (!context) return next()
       req.headers.context = context
 
       const policies = routepolicies.reduce((acc: (ParsedRoutePolicy & MatchResult)[], cur: ParsedRoutePolicy) => {
